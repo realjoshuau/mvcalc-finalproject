@@ -1,18 +1,55 @@
 import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-
+import WebGL from "three/examples/jsm/capabilities/WebGL.js";
 import { createFunction, showError, hideError } from "./util";
 import { gbid } from "./util";
+import Stats from "stats.js";
 
 console.log("[main] starting mvcalc @ " + new Date().getTime().toString());
 const APP_START_TIME = new Date().getTime();
+const stats = new Stats();
+stats.showPanel(0); // 0: FPS, 1: ms/frame, 2: memory
 
-var logDbg = (msg: string) => {
-  console.log(
-    msg + " @ " + new Date().getTime().toString(),
-    " | elapsed: " + (new Date().getTime() - APP_START_TIME) + "ms"
-  );
+var logDbg = (msg: string, doPut?: boolean) => {
+  var finMsg =
+    msg +
+    " @ " +
+    new Date().getTime().toString() +
+    " | elapsed: " +
+    (new Date().getTime() - APP_START_TIME) +
+    "ms";
+  console.log(finMsg);
+  if (!doPut) {
+    return;
+  }
+  gbid("debugPanel").innerHTML += "<span class='dbgMsg'>" + msg + "</span>\n";
+};
+
+var warnDbg = (msg: string) => {
+  var finMsg =
+    msg +
+    " @ " +
+    new Date().getTime().toString() +
+    " | elapsed: " +
+    (new Date().getTime() - APP_START_TIME) +
+    "ms";
+  console.warn(finMsg);
+  gbid("debugPanel").innerHTML +=
+    "<span class='dbgMsg text-amber-400'>" + msg + "</span>\n";
+};
+
+var errDbg = (msg: string) => {
+  var finMsg =
+    msg +
+    " @ " +
+    new Date().getTime().toString() +
+    " | elapsed: " +
+    (new Date().getTime() - APP_START_TIME) +
+    "ms";
+  console.error(finMsg);
+  gbid("debugPanel").innerHTML +=
+    "<span class='dbgMsg text-red-400'>" + msg + "</span>\n";
 };
 
 const canvas = gbid("visualization") as HTMLCanvasElement;
@@ -44,6 +81,27 @@ const tVectorSpan = document.getElementById("tVector") as HTMLSpanElement;
 const nVectorSpan = document.getElementById("nVector") as HTMLSpanElement;
 const bVectorSpan = document.getElementById("bVector") as HTMLSpanElement;
 
+const rVectorSpan = document.getElementById("rVector") as HTMLSpanElement;
+const rPrimeVectorSpan = document.getElementById(
+  "rPrimeVector"
+) as HTMLSpanElement;
+const rDoublePrimeVectorSpan = document.getElementById(
+  "rDoublePrimeVector"
+) as HTMLSpanElement;
+
+const playButton = document.getElementById("playButton") as HTMLButtonElement;
+const pauseButton = document.getElementById("pauseButton") as HTMLButtonElement;
+const generateShareLinkButton = document.getElementById(
+  "generateShareLinkButton"
+) as HTMLButtonElement;
+const shareLinkInput = document.getElementById("shareLinkInput") as any;
+const copyLinkButton = document.getElementById(
+  "copyLinkButton"
+) as HTMLButtonElement;
+const copyMessage = document.getElementById("copyMessage") as HTMLSpanElement;
+
+/* visualization constants */
+
 const NUM_DIFFERENTIATOR_H_VALUE = 1e-5; // Step size for numerical derivatives
 const VISUALIZER_FRAME_LENGTH = 0.5;
 let ALL_FRAME_TIME_DELTA = 1.0;
@@ -67,13 +125,17 @@ let tMin: number = 0,
   currentT: number = 0;
 
 let showAllFrames: boolean = false;
+// let
 
 /* animation variables */
 
 let isPlaying: boolean = false;
 let animationFrameID = -1; // Initialize with an invalid ID
 let lastTimestamp: number = 0; // Last timestamp for animation
-const PLAYBACK_SPEED = 1.0 ; // t per second
+const PLAYBACK_SPEED = 1.0; // t per second
+
+let LOCKED_UI: boolean = false; // UI lockout flag
+let LOCKED_FUNCTIONS: boolean = false; // Function lockout flag
 
 function initScene() {
   scene = new THREE.Scene();
@@ -89,8 +151,29 @@ function initScene() {
   camera.lookAt(0, 0, 0);
 
   renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  try {
+    const rendererInfo = renderer
+      .getContext()
+      .getExtension("WEBGL_debug_renderer_info");
+    logDbg(
+      "[renderer] got gpu info! vendor: " +
+        renderer.getContext().getParameter(rendererInfo.UNMASKED_VENDOR_WEBGL) +
+        " | renderer: " +
+        renderer
+          .getContext()
+          .getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL) +
+        " | version: " +
+        renderer.getContext().getParameter(renderer.VERSION),
+      true
+    );
+  } catch (e) {
+    errDbg(
+      "[renderer] failed to get GPU info: " + e + " | cannot benchmark GPU!"
+    );
+  }
   renderer.setSize(canvas.clientWidth, canvas.clientHeight);
   renderer.setPixelRatio(window.devicePixelRatio); // for high DPI displays ("retina")
+  // logDbg("[renderer] autoReset " + renderer.info.autoReset + " | memory.geometries " + renderer.info.memory.geometries + " | " + , true);
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambientLight);
@@ -126,10 +209,19 @@ function initScene() {
   // allFramesGroup.add(cube.clone());
   // End DEBUG CUBE
 
+  loadParamsFromURL(); // Load params from URL
   if (!updateCurveFunctions()) {
-    showError("Invalid function definitions. Please check.");
-    return;
+    showError("Initial curve functions invalid. Please check definitions.");
+    // Optionally set default valid functions if parsing failed badly
+    xFuncInput.value = "Math.cos(t)";
+    yFuncInput.value = "Math.sin(t)";
+    zFuncInput.value = "t / 5";
+    if (!updateCurveFunctions()) {
+      showError("Default functions invalid. Cannot proceed.");
+      return;
+    }
   }
+
   updateVisualization(); // Initial draw
   updateSliderRange(); // Set slider range
 
@@ -137,10 +229,56 @@ function initScene() {
   logDbg("[initScene] scene initialized");
 }
 
+function loadParamsFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  try {
+    if (params.has("x")) xFuncInput.value = decodeURIComponent(params.get("x"));
+    if (params.has("y")) yFuncInput.value = decodeURIComponent(params.get("y"));
+    if (params.has("z")) zFuncInput.value = decodeURIComponent(params.get("z"));
+    if (params.has("tmin"))
+      tMinInput.value = parseFloat(decodeURIComponent(params.get("tmin")));
+    if (params.has("tmax"))
+      tMaxInput.value = parseFloat(decodeURIComponent(params.get("tmax")));
+    if (params.has("dt"))
+      deltaTInput.value = parseFloat(decodeURIComponent(params.get("dt")));
+    if (params.has("semilock")) {
+      semiLockoutUI();
+      errDbg("UI semi-lockout triggered by URL parameter");
+    }
+
+    // Validate numeric inputs loaded from URL
+    if (isNaN(parseFloat(tMinInput.value))) tMinInput.value = 0;
+    if (isNaN(parseFloat(tMaxInput.value))) tMaxInput.value = 12.56;
+    if (
+      isNaN(parseFloat(deltaTInput.value)) ||
+      parseFloat(deltaTInput.value) <= 0
+    )
+      deltaTInput.value = 1;
+    if (parseFloat(tMinInput.value) >= parseFloat(tMaxInput.value)) {
+      tMinInput.value = 0;
+      tMaxInput.value = 12.56;
+      console.warn("URL parameters had tMin >= tMax, resetting to defaults.");
+    }
+    logDbg("[main] loaded url params, ready", true);
+  } catch (e) {
+    console.error("Error parsing URL parameters:", e);
+    showError("Could not parse parameters from URL. Using defaults.");
+    // Reset to defaults if parsing fails badly
+    xFuncInput.value = "Math.cos(t)";
+    yFuncInput.value = "Math.sin(t)";
+    zFuncInput.value = "t / 5";
+    tMinInput.value = 0;
+    tMaxInput.value = 12.56;
+    deltaTInput.value = 1;
+  }
+}
+
 function animate() {
+  stats.begin();
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  stats.end();
 }
 
 function onWindowResize() {
@@ -187,6 +325,7 @@ export function clearGroup(group: any) {
 }
 
 function updateCurveFunctions() {
+  logDbg("[updateCurveFunctions] called", false);
   hideError(); // Clear previous errors
   const xFuncStr = xFuncInput.value.trim();
   const yFuncStr = yFuncInput.value.trim();
@@ -215,7 +354,8 @@ function updateCurveFunctions() {
     showError(
       `Error evaluating function: ${e.message}. Check function definitions.`
     );
-    console.error("Function evaluation error:", e);
+    errDbg("Function evaluation error:", e);
+    logDbg("[updateCurveFunctions] error, failing");
     return false;
   }
 
@@ -241,25 +381,28 @@ function updateCurveFunctions() {
         1 / (NUM_DIFFERENTIATOR_H_VALUE * NUM_DIFFERENTIATOR_H_VALUE)
       );
   };
+  logDbg("[updateCurveFunctions] functions updated");
   return true; // Success
 }
 
 function calculateFrenetFrame(t: number) {
+  let timeStartFF = performance.now();
+  logDbg("[calculateFrenetFrame] called at t=" + t, false);
   const T = new THREE.Vector3();
   const N = new THREE.Vector3();
   const B = new THREE.Vector3();
 
   try {
+    let tempRValue = r(t);
     const rp = rPrime(t);
     const rpp = rDoublePrime(t);
+    updateVectorInfoR(tempRValue, rp, rpp); // Update R, R', R'' vectors
 
     // Tangent vector T = r'(t) / ||r'(t)||
     const rpMag = rp.length();
     if (rpMag < 1e-8) {
       // Check for zero magnitude (cusp or standstill)
-      console.warn(
-        `Tangent magnitude near zero at t=${t}. Using arbitrary frame.`
-      );
+      warnDbg(`Tangent magnitude near zero at t=${t}. Using arbitrary frame.`);
       // Return an arbitrary orthogonal frame if tangent is zero
       T.set(1, 0, 0);
       N.set(0, 1, 0);
@@ -274,7 +417,7 @@ function calculateFrenetFrame(t: number) {
 
     if (rp_x_rppMag < 1e-8) {
       // Check for collinear r' and r'' (straight line segment)
-      console.warn(
+      warnDbg(
         `Binormal magnitude near zero at t=${t}. Choosing arbitrary normal.`
       );
       // If B is zero, the curve is locally straight.
@@ -295,10 +438,30 @@ function calculateFrenetFrame(t: number) {
       N.crossVectors(B, T).normalize(); // N should be normalized by definition here
     }
 
+    logDbg(
+      "[calculateFrenetFrame] T: " +
+        T.toArray().toString() +
+        " | N: " +
+        N.toArray().toString() +
+        " | B: " +
+        B.toArray().toString() +
+        " | elapsed: " +
+        (performance.now() - timeStartFF) +
+        "ms",
+      false
+    );
     return { T, N, B };
   } catch (e: any) {
+    logDbg(
+      "[calculateFrenetFrame] error: " +
+        e.message +
+        " | elapsed: " +
+        (performance.now() - timeStartFF) +
+        "ms"
+    );
+    clearVectorInfoR();
     showError(`Error calculating frame at t=${t}: ${e.message}`);
-    console.error(`Frame calculation error at t=${t}:`, e);
+    errDbg(`Frame calculation error at t=${t}:`, e);
     // Return default vectors on error
     T.set(1, 0, 0);
     N.set(0, 1, 0);
@@ -333,7 +496,7 @@ function drawCurve() {
     }
   } catch (e: any) {
     showError(`Error generating curve points: ${e.message}`);
-    console.error("Curve drawing error:", e);
+    errDbg("Curve drawing error:", e);
     return; // Stop drawing if error occurs
   }
 
@@ -388,7 +551,7 @@ function drawSingleFrame(t: number) {
     updateVectorInfo(T, N, B);
   } catch (e: any) {
     showError(`Error drawing single frame: ${e.message}`);
-    console.error("Single frame drawing error:", e);
+    errDbg("Single frame drawing error:", e);
     clearVectorInfo();
   }
 }
@@ -405,7 +568,7 @@ function drawAllFrames() {
     for (let t = tMin; t <= tMax; t += ALL_FRAME_TIME_DELTA) {
       const origin = r(t);
       if (isNaN(origin.x) || isNaN(origin.y) || isNaN(origin.z)) {
-        console.warn(`Skipping frame at t=${t} due to NaN origin.`);
+        warnDbg(`Skipping frame at t=${t} due to NaN origin.`);
         continue; // Skip this frame if origin is invalid
       }
       const { T, N, B } = calculateFrenetFrame(t);
@@ -445,7 +608,7 @@ function drawAllFrames() {
     }
   } catch (e: any) {
     showError(`Error drawing multiple frames: ${e.message}`);
-    console.error("Multiple frames drawing error:", e);
+    errDbg("Multiple frames drawing error:", e);
   }
 }
 
@@ -477,6 +640,24 @@ function updateVisualization() {
   }
 }
 
+function updateVectorInfoR(
+  R: THREE.Vector3,
+  RP: THREE.Vector3,
+  RDP: THREE.Vector3
+) {
+  const formatVec = (v: THREE.Vector3) =>
+    v ? `[${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}]` : "[-,-,-]";
+  rVectorSpan.textContent = formatVec(R);
+  rPrimeVectorSpan.textContent = formatVec(RP);
+  rDoublePrimeVectorSpan.textContent = formatVec(RDP);
+}
+
+function clearVectorInfoR() {
+  rVectorSpan.textContent = "[-,-,-]";
+  rPrimeVectorSpan.textContent = "[-,-,-]";
+  rDoublePrimeVectorSpan.textContent = "[-,-,-]";
+}
+
 function updateVectorInfo(
   T: THREE.Vector3,
   N: THREE.Vector3,
@@ -495,9 +676,201 @@ function clearVectorInfo() {
   bVectorSpan.textContent = "[-,-,-]";
 }
 
+function startPlaying() {
+  if (isPlaying) return;
+  // Ensure functions and range are valid before playing
+  if (!r || !updateSliderRange()) {
+    showError("Cannot play: Invalid function or t-range.");
+    return;
+  }
+  isPlaying = true;
+  playButton.disabled = true;
+  pauseButton.disabled = false;
+  lastTimestamp = performance.now();
+  animationFrameID = requestAnimationFrame(playLoop);
+}
+
+function pausePlaying() {
+  if (!isPlaying) return;
+  isPlaying = false;
+  playButton.disabled = false;
+  pauseButton.disabled = true;
+  if (animationFrameID !== -1) {
+    cancelAnimationFrame(animationFrameID);
+    animationFrameID = -1;
+  }
+}
+
+function semiLockoutUI() {
+  xFuncInput.disabled = true;
+  yFuncInput.disabled = true;
+  zFuncInput.disabled = true;
+  tMinInput.disabled = true;
+  tMaxInput.disabled = true;
+  deltaTInput.disabled = true;
+  updateButton.disabled = true;
+
+  LOCKED_FUNCTIONS = true;
+  const lockoutStatusElement = gbid("lockoutStatus");
+  if (lockoutStatusElement) {
+    lockoutStatusElement.innerHTML = 'Press "Unlock" to modify values.';
+  }
+  const unlockControlsButton = gbid("unlockControlsButton");
+  if (unlockControlsButton) {
+    unlockControlsButton.classList.remove("hidden");
+    unlockControlsButton.addEventListener("click", unlockUI);
+    unlockControlsButton.addEventListener("click", () => {
+      if (lockoutStatusElement) {
+        lockoutStatusElement.innerHTML = "";
+        unlockControlsButton.classList.add("hidden");
+      }
+    });
+  }
+}
+
+function lockoutUI() {
+  // Disable all UI elements
+  xFuncInput.disabled = true;
+  yFuncInput.disabled = true;
+  zFuncInput.disabled = true;
+  tMinInput.disabled = true;
+  tMaxInput.disabled = true;
+  deltaTInput.disabled = true;
+  updateButton.disabled = true;
+  tSlider.disabled = true;
+  showAllFramesButton.disabled = true;
+  hideAllFramesButton.disabled = true;
+  generateShareLinkButton.disabled = true;
+  copyLinkButton.disabled = true;
+  playButton.disabled = true;
+  pauseButton.disabled = true;
+  LOCKED_UI = true;
+  const lockoutStatusElement = gbid("lockoutStatus");
+  if (lockoutStatusElement) {
+    lockoutStatusElement.innerHTML = 'Press "Unlock" to modify values.';
+  }
+  const unlockControlsButton = gbid("unlockControlsButton");
+  if (unlockControlsButton) {
+    unlockControlsButton.classList.remove("hidden");
+    unlockControlsButton.addEventListener("click", unlockUI);
+    unlockControlsButton.addEventListener("click", () => {
+      if (lockoutStatusElement) {
+        lockoutStatusElement.innerHTML = "";
+        unlockControlsButton.classList.add("hidden");
+      }
+    });
+  }
+}
+
+function unlockUI() {
+  // Enable all UI elements
+  xFuncInput.disabled = false;
+  yFuncInput.disabled = false;
+  zFuncInput.disabled = false;
+  tMinInput.disabled = false;
+  tMaxInput.disabled = false;
+  deltaTInput.disabled = false;
+  updateButton.disabled = false;
+  tSlider.disabled = false;
+  showAllFramesButton.disabled = false;
+  hideAllFramesButton.disabled = false;
+  generateShareLinkButton.disabled = false;
+  copyLinkButton.disabled = false;
+  playButton.disabled = false;
+  pauseButton.disabled = false;
+  LOCKED_UI = false;
+  gbid("lockoutStatus").innerHTML = "";
+  const unlockControlsButton = gbid("unlockControlsButton");
+  if (unlockControlsButton) {
+    unlockControlsButton.classList.add("hidden");
+    unlockControlsButton.removeEventListener("click", unlockUI);
+  }
+}
+
+function playLoop(timestamp: number) {
+  if (!isPlaying) return;
+
+  const deltaTime = (timestamp - lastTimestamp) / 1000;
+  lastTimestamp = timestamp;
+
+  // Recalculate numerical tMin/tMax inside loop in case they changed
+  const numTMin = parseFloat(tMinInput.value);
+  const numTMax = parseFloat(tMaxInput.value);
+  if (isNaN(numTMin) || isNaN(numTMax) || numTMin >= numTMax) {
+    errDbg("Invalid tMin/tMax during play loop.");
+    showError("Invalid t-range during playback.");
+    pausePlaying();
+    return;
+  }
+
+  currentT += PLAYBACK_SPEED * deltaTime;
+
+  // Loop back if currentT exceeds tMax
+  if (currentT > numTMax) {
+    // Handle wrap around: start from min plus the overshoot
+    currentT = numTMin + ((currentT - numTMax) % (numTMax - numTMin));
+  }
+  // Clamp just in case of floating point issues
+  currentT = Math.max(numTMin, Math.min(numTMax, currentT));
+
+  // Update UI
+  // @ts-ignore
+  tSlider.value = currentT;
+  tValueSpan.textContent = currentT.toFixed(2);
+
+  // Redraw the single frame
+  drawSingleFrame(currentT);
+
+  // Request the next frame
+  animationFrameID = requestAnimationFrame(playLoop);
+}
+
+function generateShareLink() {
+  try {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    params.set("x", encodeURIComponent(xFuncInput.value));
+    params.set("y", encodeURIComponent(yFuncInput.value));
+    params.set("z", encodeURIComponent(zFuncInput.value));
+    params.set("tmin", encodeURIComponent(tMinInput.value));
+    params.set("tmax", encodeURIComponent(tMaxInput.value));
+    params.set("dt", encodeURIComponent(deltaTInput.value));
+    shareLinkInput.value = `${baseUrl}?${params.toString()}`;
+    copyMessage.textContent = ""; // Clear previous copy message
+  } catch (e) {
+    errDbg("Error generating share link:", e);
+    shareLinkInput.value = "Error generating link.";
+    copyMessage.textContent = "";
+  }
+}
+
 function setupEventListeners() {
   window.addEventListener("resize", onWindowResize, false);
   // Add other event listeners as needed
+
+  generateShareLinkButton.addEventListener("click", generateShareLink);
+
+  copyLinkButton.addEventListener("click", () => {
+    if (
+      !shareLinkInput.value ||
+      shareLinkInput.value === "Error generating link."
+    ) {
+      copyMessage.textContent = "Generate link first!";
+      setTimeout(() => (copyMessage.textContent = ""), 2000);
+      return;
+    }
+    navigator.clipboard.writeText(shareLinkInput.value).then(
+      () => {
+        copyMessage.textContent = "Link copied!";
+        setTimeout(() => (copyMessage.textContent = ""), 2000); // Clear message after 2s
+      },
+      (err) => {
+        errDbg("Failed to copy link: ", err);
+        copyMessage.textContent = "Copy failed!";
+        setTimeout(() => (copyMessage.textContent = ""), 2000);
+      }
+    );
+  });
 
   updateButton.addEventListener("click", () => {
     if (updateCurveFunctions()) {
@@ -507,6 +880,9 @@ function setupEventListeners() {
   });
 
   tSlider.addEventListener("input", (event) => {
+    // if (isPlaying) {
+    //   pausePlaying(); // Pause if currently playing
+    // }
     if (event.target) {
       currentT = parseFloat((event.target as HTMLInputElement).value);
     }
@@ -537,14 +913,89 @@ function setupEventListeners() {
       if (updateCurveFunctions()) drawAllFrames();
     }
   });
+
+  playButton.addEventListener("click", startPlaying);
+  pauseButton.addEventListener("click", pausePlaying);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === ")") {
+      if (LOCKED_UI) {
+        warnDbg("UI lockout disabled by keypress");
+        unlockUI();
+      } else {
+        warnDbg("UI lockout triggered by keypress");
+        lockoutUI();
+      }
+      return; // Ignore the key event
+    }
+    if (LOCKED_UI) return; // Ignore key events if UI is locked
+    if (event.key === " ") {
+      // Spacebar toggles play/pause
+      if (isPlaying) {
+        pausePlaying();
+      } else {
+        startPlaying();
+      }
+    }
+    if (event.key === "Escape") {
+      // Escape key to stop playing
+      pausePlaying();
+    }
+    if (event.key === "ArrowLeft") {
+      pausePlaying();
+      // Left arrow to decrease t
+      currentT = Math.max(tMin, currentT - 0.1);
+      tSlider.value = currentT.toString();
+      tValueSpan.textContent = currentT.toFixed(2);
+      drawSingleFrame(currentT);
+    }
+    if (event.key === "ArrowRight") {
+      pausePlaying();
+      // Right arrow to increase t
+      currentT = Math.min(tMax, currentT + 0.1);
+      tSlider.value = currentT.toString();
+      tValueSpan.textContent = currentT.toFixed(2);
+      drawSingleFrame(currentT);
+    }
+    if (event.key === "S" && event.shiftKey) {
+      // Shift + S to show all frames
+      if (showAllFrames) {
+        showAllFrames = true;
+        drawAllFrames();
+      }
+    }
+    if (event.key === "H" && event.shiftKey) {
+      // Shift + H to hide all frames
+      showAllFrames = false;
+      clearGroup(allFramesGroup);
+    }
+  });
 }
 
 setupEventListeners();
 
-logDbg("[main] initializing scene");
-initScene();
-logDbg("[main] scene initialized");
-logDbg("[main] force resize");
-onWindowResize();
-logDbg("[main] force resize done");
-logDbg("[main] initialization complete");
+document.addEventListener("DOMContentLoaded", () => {
+  if (!WebGL.isWebGL2Available()) {
+    errDbg("[main] WebGL2 not available. Please use a compatible browser.");
+    showError(
+      "WebGL2 not available. Please use a compatible browser or update your graphics drivers."
+    );
+    errDbg(
+      "[three] webgl2 not available. " +
+        Date.now().toString() +
+        " | " +
+        WebGL.getWebGL2ErrorMessage().getHTML()
+    );
+    errDbg("UI lockout triggered by WebGL2 check failure");
+    lockoutUI();
+    // return;
+  }
+  logDbg("[main] initializing scene");
+  initScene();
+  logDbg("[main] scene initialized");
+  logDbg("[main] force resize");
+  onWindowResize();
+  logDbg("[main] force resize done");
+  logDbg("[main] initialization complete", true);
+  // document.getElementById("statsField").appendChild(stats.dom);
+  // document.getElementById("statsField").appendChild(statsMS.dom);
+});

@@ -49,7 +49,7 @@
         </div>
         <div>
           <label for="deltaT" class="text-sm text-gray-700"
-            >Frame Interval (Δt):</label
+            >SAF Frame Interval (Δt):</label
           >
           <input
             type="number"
@@ -69,6 +69,7 @@
         >
           Update Curve
         </button>
+        <span class="text-sm text-gray-500 ml-4" id="lockoutStatus"></span>
       </div>
 
       <div id="visualizationContainer" class="mb-4 relative">
@@ -144,6 +145,20 @@
           >
             Hide All Frames
           </button>
+
+          <button
+            id="reset"
+            onclick="window.location.reload();"
+            class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow text-sm"
+          >
+            Reset
+          </button>
+          <button
+            id="unlockControlsButton"
+            class="hidden bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-md shadow text-sm"
+          >
+            Unlock Controls
+          </button>
         </div>
       </div>
 
@@ -178,9 +193,22 @@
         id="vectorInfo"
         class="text-xs font-mono bg-gray-50 p-3 rounded border border-gray-200"
       >
+        <p><span id="rVector" hidden>[-, -, -]</span></p>
+        <p><span id="rPrimeVector" hidden>[-, -, -]</span></p>
+        <p><span id="rDoublePrimeVector" hidden>[-, -, -]</span></p>
         <p>T: <span id="tVector">[-, -, -]</span></p>
         <p>N: <span id="nVector">[-, -, -]</span></p>
         <p>B: <span id="bVector">[-, -, -]</span></p>
+      </div>
+
+      <!-- debug panel, press button to show -->
+      <div
+        id="debugPanel"
+        class="bg-gray-50 p-3 rounded border border-gray-200 mt-4 text-xs font-mono"
+      >
+        <h2 class="text-sm font-semibold text-gray-700 mb-2">Debug Info</h2>
+        <!-- <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="statsField">
+        </div> -->
       </div>
     </div>
   </body>

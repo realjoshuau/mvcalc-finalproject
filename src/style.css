@@ -52,6 +52,12 @@ input[type="number"] {
   width: 100%;
 }
 
+input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #e5e7eb; /* Gray background */
+}
+
 button {
   transition: background-color 0.2s ease-in-out;
 }
