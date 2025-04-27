@@ -245,6 +245,14 @@ function loadParamsFromURL() {
       semiLockoutUI();
       errDbg("UI semi-lockout triggered by URL parameter");
     }
+    if (params.has("t")) {
+      currentT = parseFloat(decodeURIComponent(params.get("t")));
+      if (isNaN(currentT)) {
+        currentT = 0;
+        errDbg("Invalid t value in URL, resetting to 0");
+      }
+      tSlider.value = currentT.toString();
+    }
 
     // Validate numeric inputs loaded from URL
     if (isNaN(parseFloat(tMinInput.value))) tMinInput.value = 0;
