@@ -80,19 +80,56 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center mb-4">
-        <div>
+        <div class="flex flex-col space-y-2">
           <label for="tSlider" class="text-sm text-gray-700"
             >Current t: <span id="tValue" class="font-mono">0.00</span></label
           >
-          <input
-            type="range"
-            id="tSlider"
-            min="0"
-            max="10"
-            step="0.01"
-            value="0"
-            class="w-full"
-          />
+          <div class="flex items-center space-x-2">
+            <button
+              id="playButton"
+              class="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-full shadow focus:outline-none"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <button
+              id="pauseButton"
+              class="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow focus:outline-none"
+              disabled
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1H8zm3 0a1 1 0 00-1 1v4a1 1 0 001 1h1a1 1 0 001-1V8a1 1 0 00-1-1h-1z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <input
+              type="range"
+              id="tSlider"
+              min="0"
+              max="10"
+              step="0.01"
+              value="0"
+              class="w-full"
+            />
+          </div>
         </div>
         <div class="flex justify-center md:justify-end space-x-3 mt-4 md:mt-0">
           <button
@@ -108,6 +145,33 @@
             Hide All Frames
           </button>
         </div>
+      </div>
+
+      <div class="mt-6 mb-4">
+        <label for="shareLinkInput" class="text-sm text-gray-700"
+          >Shareable Link:</label
+        >
+        <div class="flex space-x-2">
+          <input
+            type="text"
+            id="shareLinkInput"
+            readonly
+            class="flex-grow text-sm"
+          />
+          <button
+            id="generateShareLinkButton"
+            class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-md shadow text-sm"
+          >
+            Generate
+          </button>
+          <button
+            id="copyLinkButton"
+            class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-md shadow text-sm"
+          >
+            Copy
+          </button>
+        </div>
+        <p id="copyMessage" class="text-xs text-green-600 mt-1 h-4"></p>
       </div>
 
       <div

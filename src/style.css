@@ -55,3 +55,12 @@ input[type="number"] {
 button {
   transition: background-color 0.2s ease-in-out;
 }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#shareLinkInput {
+  background-color: #e5e7eb;
+}
