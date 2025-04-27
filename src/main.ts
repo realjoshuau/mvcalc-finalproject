@@ -843,6 +843,7 @@ function generateShareLink() {
     params.set("tmin", encodeURIComponent(tMinInput.value));
     params.set("tmax", encodeURIComponent(tMaxInput.value));
     params.set("dt", encodeURIComponent(deltaTInput.value));
+    params.set("t", encodeURIComponent(currentT.toFixed(2)));
     shareLinkInput.value = `${baseUrl}?${params.toString()}`;
     copyMessage.textContent = ""; // Clear previous copy message
   } catch (e) {
