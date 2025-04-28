@@ -44,7 +44,7 @@ var logDbg = (msg: string, doPut?: boolean) => {
   }
   const debugPanel = gbid("debugPanel");
   if (debugPanel) {
-    debugPanel.innerHTML += "<span class='dbgMsg'>" + msg + "</span><br />";
+    debugPanel.innerHTML += "<span class='dbgMsg'>" + finMsg + "</span><br />";
   } else {
     console.warn("Debug panel not found. Cannot log debug messages.");
   }
@@ -62,7 +62,7 @@ var warnDbg = (msg: string) => {
   const debugPanel = gbid("debugPanel");
   if (debugPanel) {
     debugPanel.innerHTML +=
-      "<span class='dbgMsg text-amber-400'>" + msg + "</span><br />";
+      "<span class='dbgMsg text-amber-400'>" + finMsg + "</span><br />";
   } else {
     console.error("Debug panel not found. Cannot log debug messages.");
   }
@@ -79,8 +79,11 @@ var errDbg = (msg: string) => {
   originalError(finMsg);
   const debugPanel = gbid("debugPanel");
   if (debugPanel) {
+    if (!DID_INIT) {
+      debugPanel.classList.remove("hidden");
+    }
     debugPanel.innerHTML +=
-      "<span class='dbgMsg text-red-400'>" + msg + "</span><br />";
+      "<span class='dbgMsg text-red-400'>" + finMsg + "</span><br />";
   } else {
     originalError("Debug panel not found. Cannot log debug messages.");
     showError("FSV Error 0x21 (not fatal)");
@@ -136,6 +139,9 @@ const copyLinkButton = document.getElementById(
 ) as HTMLButtonElement;
 const copyMessage = document.getElementById("copyMessage") as HTMLSpanElement;
 
+const versionText = gbid("versionText") as HTMLDivElement;
+const versionExtra = gbid("versionExtra") as HTMLDivElement;
+
 /* visualization constants */
 
 const NUM_DIFFERENTIATOR_H_VALUE = 1e-5; // Step size for numerical derivatives
@@ -172,6 +178,7 @@ const PLAYBACK_SPEED = 1.0; // t per second
 
 let LOCKED_UI: boolean = false; // UI lockout flag
 let LOCKED_FUNCTIONS: boolean = false; // Function lockout flag
+let WAS_VALID: boolean = false; // Function validity flag
 
 let DID_INIT: boolean = false; // Initialization flag
 
@@ -252,8 +259,8 @@ function initScene() {
     showError("Initial curve functions invalid. Please check definitions.");
     warnDbg("Initial function parsing failed - falling back to defaults.");
     // Optionally set default valid functions if parsing failed badly
-    xFuncInput.value = "Math.cos(t)";
-    yFuncInput.value = "Math.sin(t)";
+    xFuncInput.value = "cos(t)";
+    yFuncInput.value = "sin(t)";
     zFuncInput.value = "t / 5";
     if (!updateCurveFunctions()) {
       errDbg("Default functions parsing failed, check device compat");
@@ -398,15 +405,23 @@ function updateCurveFunctions() {
     if (isNaN(testX) || isNaN(testY) || isNaN(testZ)) {
       throw new Error("Function returned NaN at t=" + testT);
     }
+    logDbg("[updateCurveFunctions] test functions: " + testX, false);
+    logDbg("[updateCurveFunctions] test functions: " + testY, false);
+    logDbg("[updateCurveFunctions] test functions: " + testZ, false);
   } catch (e: any) {
     showError(
       `Error evaluating function: ${e.message}. Check function definitions.`
     );
     errDbg("Function evaluation error (" + e + ")");
     logDbg("[updateCurveFunctions] error, failing", true);
+    WAS_VALID = false;
     return false;
   }
 
+  if (!WAS_VALID) {
+    logDbg("[updateCurveFunctions] functions valid", true);
+    WAS_VALID = true;
+  }
   // If all checks pass, assign the functions
   r = (t: number) => new THREE.Vector3(tempR.x(t), tempR.y(t), tempR.z(t));
 
@@ -1017,6 +1032,33 @@ function setupEventListeners() {
       showAllFrames = false;
       clearGroup(allFramesGroup);
     }
+  });
+  versionText.addEventListener("click", () => {
+    const debugPanel = gbid("debugPanel");
+    if (!debugPanel) {
+      errDbg("Debug panel not found");
+      return;
+    }
+    debugPanel.classList.toggle("hidden");
+  });
+  versionExtra.addEventListener("click", () => {
+    const debugPanel = gbid("debugPanel");
+    if (!debugPanel) {
+      errDbg("Debug panel not found");
+      return;
+    }
+    debugPanel.innerHTML += `
+    <br /> ----------- Credits -----------
+    <p> <a href="https://github.com/realjoshuau" style="color: magenta !important"> @realjoshuau </a> <br>
+    <ul>
+      <li> <a href="https://tailwindcss.com" style="color: blue !important"> tailwind css </a> </li>
+      <li> <a href="https://threejs.org/" style="color: blue !important"> three.js </a> </li>
+      <li> <a href="https://mathjs.org" style="color: blue !important"> math.js </a> </li>
+      </ul>
+    </p>
+    <span style="color: red !important"> this code is licensed with GPLv3 - if you want to modify it, you must share your changes with the same license. </span>
+    <br /> ---------- End ----------- <br /><br />
+    `;
   });
 }
 
