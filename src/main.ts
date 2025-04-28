@@ -11,6 +11,25 @@ const APP_START_TIME = new Date().getTime();
 const stats = new Stats();
 stats.showPanel(0); // 0: FPS, 1: ms/frame, 2: memory
 
+// hook into console log, warn, error
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+console.log = (...args: any[]) => {
+  originalLog(...args);
+  logDbg("console: " + args.join(" "), true);
+};
+
+console.warn = (...args: any[]) => {
+  originalWarn(...args);
+  warnDbg("console: WARN " + args.join(" "));
+};
+console.error = (...args: any[]) => {
+  originalError(...args);
+  errDbg("console: ERROR " + args.join(" "));
+};
+
 var logDbg = (msg: string, doPut?: boolean) => {
   var finMsg =
     msg +
@@ -19,11 +38,16 @@ var logDbg = (msg: string, doPut?: boolean) => {
     " | elapsed: " +
     (new Date().getTime() - APP_START_TIME) +
     "ms";
-  console.log(finMsg);
+  originalLog(finMsg);
   if (!doPut) {
     return;
   }
-  gbid("debugPanel").innerHTML += "<span class='dbgMsg'>" + msg + "</span>\n";
+  const debugPanel = gbid("debugPanel");
+  if (debugPanel) {
+    debugPanel.innerHTML += "<span class='dbgMsg'>" + msg + "</span><br />";
+  } else {
+    console.warn("Debug panel not found. Cannot log debug messages.");
+  }
 };
 
 var warnDbg = (msg: string) => {
@@ -34,9 +58,14 @@ var warnDbg = (msg: string) => {
     " | elapsed: " +
     (new Date().getTime() - APP_START_TIME) +
     "ms";
-  console.warn(finMsg);
-  gbid("debugPanel").innerHTML +=
-    "<span class='dbgMsg text-amber-400'>" + msg + "</span>\n";
+  originalWarn(finMsg);
+  const debugPanel = gbid("debugPanel");
+  if (debugPanel) {
+    debugPanel.innerHTML +=
+      "<span class='dbgMsg text-amber-400'>" + msg + "</span><br />";
+  } else {
+    console.error("Debug panel not found. Cannot log debug messages.");
+  }
 };
 
 var errDbg = (msg: string) => {
@@ -47,15 +76,22 @@ var errDbg = (msg: string) => {
     " | elapsed: " +
     (new Date().getTime() - APP_START_TIME) +
     "ms";
-  console.error(finMsg);
-  gbid("debugPanel").innerHTML +=
-    "<span class='dbgMsg text-red-400'>" + msg + "</span>\n";
+  originalError(finMsg);
+  const debugPanel = gbid("debugPanel");
+  if (debugPanel) {
+    debugPanel.innerHTML +=
+      "<span class='dbgMsg text-red-400'>" + msg + "</span><br />";
+  } else {
+    originalError("Debug panel not found. Cannot log debug messages.");
+    showError("FSV Error 0x21 (not fatal)");
+  }
 };
+
+console.log("[main] console hooks installed");
 
 const canvas = gbid("visualization") as HTMLCanvasElement;
 if (!canvas) {
-  alert("[STOP] canvas not found");
-  throw new Error("Canvas not found");
+  errDbg("[dom] canvas not found!");
 }
 
 /* elements */
@@ -137,6 +173,8 @@ const PLAYBACK_SPEED = 1.0; // t per second
 let LOCKED_UI: boolean = false; // UI lockout flag
 let LOCKED_FUNCTIONS: boolean = false; // Function lockout flag
 
+let DID_INIT: boolean = false; // Initialization flag
+
 function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf0f0f0);
@@ -212,12 +250,13 @@ function initScene() {
   loadParamsFromURL(); // Load params from URL
   if (!updateCurveFunctions()) {
     showError("Initial curve functions invalid. Please check definitions.");
+    warnDbg("Initial function parsing failed - falling back to defaults.");
     // Optionally set default valid functions if parsing failed badly
     xFuncInput.value = "Math.cos(t)";
     yFuncInput.value = "Math.sin(t)";
     zFuncInput.value = "t / 5";
     if (!updateCurveFunctions()) {
-      showError("Default functions invalid. Cannot proceed.");
+      errDbg("Default functions parsing failed, check device compat");
       return;
     }
   }
@@ -226,7 +265,8 @@ function initScene() {
   updateSliderRange(); // Set slider range
 
   animate();
-  logDbg("[initScene] scene initialized");
+  logDbg("[initScene] finished", true);
+  DID_INIT = true;
 }
 
 function loadParamsFromURL() {
@@ -362,8 +402,8 @@ function updateCurveFunctions() {
     showError(
       `Error evaluating function: ${e.message}. Check function definitions.`
     );
-    errDbg("Function evaluation error:", e);
-    logDbg("[updateCurveFunctions] error, failing");
+    errDbg("Function evaluation error (" + e + ")");
+    logDbg("[updateCurveFunctions] error, failing", true);
     return false;
   }
 
@@ -926,7 +966,7 @@ function setupEventListeners() {
   playButton.addEventListener("click", startPlaying);
   pauseButton.addEventListener("click", pausePlaying);
   window.addEventListener("keydown", (event) => {
-    if (event.key === ")") {
+    if (event.key === "$") {
       if (LOCKED_UI) {
         warnDbg("UI lockout disabled by keypress");
         unlockUI();
@@ -983,6 +1023,17 @@ function setupEventListeners() {
 setupEventListeners();
 
 document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    if (!DID_INIT) {
+      errDbg("[main] scene initialization failed or timed out!");
+      // showError(
+      //   "Scene initialization failed. Please check console for errors."
+      // );
+    } else {
+      logDbg("[main] scene initialized successfully", true);
+      // showError("Scene initialized successfully.");
+    }
+  }, 5000); // Timeout to check if initialization was successful
   if (!WebGL.isWebGL2Available()) {
     errDbg("[main] WebGL2 not available. Please use a compatible browser.");
     showError(
@@ -996,12 +1047,12 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     errDbg("UI lockout triggered by WebGL2 check failure");
     lockoutUI();
-    // return;
+    return;
   }
-  logDbg("[main] initializing scene");
+  logDbg("[main] initializing scene", true);
   initScene();
-  logDbg("[main] scene initialized");
-  logDbg("[main] force resize");
+  logDbg("[main] scene initialized", true);
+  logDbg("[main] force resize", true);
   onWindowResize();
   logDbg("[main] force resize done");
   logDbg("[main] initialization complete", true);
