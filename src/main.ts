@@ -1085,9 +1085,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, 5000); // Timeout to check if initialization was successful
   if (!WebGL.isWebGL2Available()) {
-    errDbg("[main] WebGL2 not available. Please use a compatible browser.");
     showError(
-      "WebGL2 not available. Please use a compatible browser or update your graphics drivers."
+      "Unable to show frame, WebGL2 not available. Please use a compatible browser or update your graphics drivers."
     );
     errDbg(
       "[three] webgl2 not available. " +
@@ -1095,8 +1094,20 @@ document.addEventListener("DOMContentLoaded", () => {
         " | " +
         WebGL.getWebGL2ErrorMessage().getHTML()
     );
-    errDbg("UI lockout triggered by WebGL2 check failure");
+    warnDbg("UI lockout triggered by WebGL2 check failure");
     lockoutUI();
+    const unlockControlsButton = gbid("unlockControlsButton");
+    if (unlockControlsButton) {
+      unlockControlsButton.classList.add("hidden");
+      unlockControlsButton.removeEventListener("click", unlockUI);
+    }
+    const lockoutStatusElement = gbid("lockoutStatus");
+    if (lockoutStatusElement) {
+      lockoutStatusElement.innerHTML =
+        "<br /> <br /> Your browser doesn't seem to support WebGL2, a required feature to run this app. <br /> Consider installing a modern browser such as <a href='https://support.google.com/chrome/answer/95346?hl=en&co=GENIE.Platform%3DDesktop' style='color: blue !important'> Google Chrome </a>";
+    }
+    errDbg("[main] WebGL2 not available. Please use a compatible browser.");
+    logDbg("[main] stopped", true);
     return;
   }
   logDbg("[main] initializing scene", true);
