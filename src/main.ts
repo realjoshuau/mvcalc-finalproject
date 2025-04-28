@@ -228,7 +228,7 @@ function initScene() {
   directionalLight.position.set(5, 10, 7.5);
   scene.add(directionalLight);
 
-  controls = new OrbitControls(camera, renderer.domElement);
+  controls = new MapControls(camera, renderer.domElement);
   controls.enableDamping = true; // Smooth camera movement
   controls.dampingFactor = 0.1;
   controls.screenSpacePanning = true; // Pan in the plane defined by camera's up vector
@@ -911,6 +911,13 @@ function generateShareLink() {
 
 function setupEventListeners() {
   window.addEventListener("resize", onWindowResize, false);
+
+  window.addEventListener("keydown", function (e) {
+    if (e.keyCode == 32 && e.target == document.body) {
+      e.preventDefault(); // stop spacebar from scrolling, see stackoverflow
+    }
+  });
+
   // Add other event listeners as needed
 
   generateShareLinkButton.addEventListener("click", generateShareLink);
