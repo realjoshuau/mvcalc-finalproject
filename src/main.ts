@@ -1,6 +1,7 @@
 import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 import WebGL from "three/examples/jsm/capabilities/WebGL.js";
 import { createFunction, showError, hideError } from "./util";
 import { gbid } from "./util";
@@ -157,7 +158,7 @@ let rDoublePrime = (t: number) => new THREE.Vector3(0, 0, 0);
 let scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
-  controls: OrbitControls;
+  controls: THREE.Controls<any>;
 let singleFrameGroup: THREE.Group, allFramesGroup: THREE.Group;
 let curveObject: THREE.Line;
 
@@ -230,7 +231,7 @@ function initScene() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; // Smooth camera movement
   controls.dampingFactor = 0.1;
-  controls.screenSpacePanning = false; // Pan in the plane defined by camera's up vector
+  controls.screenSpacePanning = true; // Pan in the plane defined by camera's up vector
   controls.minDistance = 1;
   controls.maxDistance = 100;
 
@@ -290,7 +291,7 @@ function loadParamsFromURL() {
       deltaTInput.value = parseFloat(decodeURIComponent(params.get("dt")));
     if (params.has("semilock")) {
       semiLockoutUI();
-      errDbg("UI semi-lockout triggered by URL parameter");
+      warnDbg("UI semi-lockout triggered by URL parameter");
     }
     if (params.has("t")) {
       currentT = parseFloat(decodeURIComponent(params.get("t")));
